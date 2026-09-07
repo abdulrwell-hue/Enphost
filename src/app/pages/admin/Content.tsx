@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Save, Plus, X, CheckCircle } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Save, Plus, X, CheckCircle, Upload, Trash2, Image as ImageIcon } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 
 type Tab = 'hero' | 'about' | 'why_us' | 'process' | 'contact'
@@ -126,6 +126,129 @@ function ListEditor({
   )
 }
 
+// ─── Image uploader ──────────────────────────────────────────────────────────
+function ImageBlock({
+  label,
+  hint,
+  url,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  url: string
+  onChange: (url: string, path: string) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const [error, setError] = useState('')
+
+  async function upload(files: FileList | null) {
+    const file = files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError('الملف المختار ليس صورة')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('حجم الصورة كبير — الحد الأقصى 5 ميجابايت')
+      return
+    }
+
+    setError('')
+    setUploading(true)
+
+    const ext = file.name.split('.').pop() ?? 'jpg'
+    const path = `about/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('portfolio')
+      .upload(path, file, { cacheControl: '3600', upsert: false })
+
+    if (uploadError) {
+      setError('فشل رفع الصورة — حاول مرة أخرى')
+      setUploading(false)
+      return
+    }
+
+    const { data: urlData } = supabase.storage.from('portfolio').getPublicUrl(path)
+    onChange(urlData.publicUrl, path)
+    setUploading(false)
+  }
+
+  return (
+    <div className="mb-5">
+      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">{label}</label>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={e => upload(e.target.files)}
+      />
+
+      {url ? (
+        <div className="relative group rounded-2xl overflow-hidden border border-white/10 bg-[#0f0f16] max-w-xs">
+          <img src={url} alt={label} className="w-full aspect-square object-cover" />
+          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3">
+            <button
+              onClick={() => inputRef.current?.click()}
+              disabled={uploading}
+              title="استبدال الصورة"
+              className="w-11 h-11 bg-white/10 hover:bg-white/25 rounded-full flex items-center justify-center transition-colors disabled:opacity-40"
+            >
+              <Upload className="w-5 h-5 text-white" />
+            </button>
+            <button
+              onClick={() => onChange('', '')}
+              title="إزالة الصورة"
+              className="w-11 h-11 bg-red-500/20 hover:bg-red-500/50 rounded-full flex items-center justify-center transition-colors"
+            >
+              <Trash2 className="w-5 h-5 text-red-400" />
+            </button>
+          </div>
+          {uploading && (
+            <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+              <div className="w-10 h-10 border-2 border-[#d4af37] border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+        </div>
+      ) : (
+        <div
+          onClick={() => !uploading && inputRef.current?.click()}
+          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => { e.preventDefault(); setDragOver(false); upload(e.dataTransfer.files) }}
+          className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all ${
+            dragOver
+              ? 'border-[#d4af37] bg-[#d4af37]/10'
+              : 'border-[#d4af37]/20 hover:border-[#d4af37]/50 bg-[#0f0f16]'
+          }`}
+        >
+          {uploading ? (
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-10 h-10 border-2 border-[#d4af37] border-t-transparent rounded-full animate-spin" />
+              <p className="text-[#d4af37] font-semibold text-sm">جاري رفع الصورة...</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 pointer-events-none">
+              <div className="w-14 h-14 bg-[#d4af37]/10 rounded-2xl flex items-center justify-center">
+                <ImageIcon className="w-7 h-7 text-[#d4af37]" />
+              </div>
+              <p className="text-white font-semibold">اسحب الصورة هنا أو انقر للاختيار</p>
+              <p className="text-gray-500 text-xs">JPG · PNG · WEBP — حتى 5 ميجابايت</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {hint && !error && <p className="text-gray-500 text-xs mt-2">{hint}</p>}
+      {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
+    </div>
+  )
+}
+
 // ─── Save button ─────────────────────────────────────────────────────────────
 function SaveBar({ dirty, saving, saved, onSave }: { dirty: boolean; saving: boolean; saved: boolean; onSave: () => void }) {
   return (
@@ -163,6 +286,7 @@ export default function Content() {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [imageError, setImageError] = useState('')
 
   useEffect(() => {
     fetchContent()
@@ -217,6 +341,38 @@ export default function Content() {
     setLists(prev => ({ ...prev, [section]: items }))
     setDirty(true)
     setSaved(false)
+  }
+
+  // Sets the "about" image. Persisted immediately so it goes live without
+  // waiting for the save button, then the replaced file is cleaned up.
+  async function setAboutImage(url: string, path: string) {
+    const previousPath = blocks['about__image_path']
+
+    setBlocks(prev => ({ ...prev, about__image_url: url, about__image_path: path }))
+    setSaved(false)
+
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('content_blocks').upsert(
+      [
+        { section: 'about', key: 'image_url',  value: url,  updated_at: now },
+        { section: 'about', key: 'image_path', value: path, updated_at: now },
+      ],
+      { onConflict: 'section,key' },
+    )
+
+    if (error) {
+      setImageError(`تعذّر حفظ الصورة: ${error.message}`)
+      setDirty(true)
+      return
+    }
+
+    setImageError('')
+    setSaved(true)
+    setTimeout(() => setSaved(false), 3000)
+
+    if (previousPath && previousPath !== path) {
+      await supabase.storage.from('portfolio').remove([previousPath])
+    }
   }
 
   function b(section: string, key: string) {
@@ -311,6 +467,13 @@ export default function Content() {
             <p className="text-white font-bold mb-6">نصوص قسم "عن المصور"</p>
             <TextBlock label="الفقرة الأولى" value={b('about','paragraph_1')} onChange={v => setBlock('about','paragraph_1',v)} multiline placeholder="أنا مصور عقاري متخصص..." />
             <TextBlock label="الفقرة الثانية" value={b('about','paragraph_2')} onChange={v => setBlock('about','paragraph_2',v)} multiline placeholder="أجمع بين الحس البصري..." />
+            <ImageBlock
+              label="صورة المصور"
+              hint="تظهر بجانب النصوص في قسم «عن المصور» — يُفضّل صورة مربعة. تُحفظ تلقائياً بمجرد الرفع."
+              url={b('about','image_url')}
+              onChange={setAboutImage}
+            />
+            {imageError && <p className="text-red-400 text-xs -mt-3 mb-5">{imageError}</p>}
           </div>
         )}
 

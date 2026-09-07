@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Camera, Video, Instagram, MessageCircle, ChevronDown } from 'lucide-react'
+import { Camera, Video, Instagram, MessageCircle, ChevronDown, ScrollText } from 'lucide-react'
 import { motion } from 'motion/react'
 import { supabase } from '../lib/supabase'
-import type { Package, PortfolioItem, Video as VideoType, SettingsMap } from '../lib/types'
+import type { Package, PortfolioItem, Video as VideoType, SettingsMap, TermsCondition } from '../lib/types'
 
 // ── Default / fallback values while loading ─────────────────────────────────
 const DEFAULT_WHATSAPP = '966599991078'
@@ -49,6 +49,7 @@ function Skeleton({ className }: { className?: string }) {
 
 export default function App() {
   const [packages, setPackages] = useState<Package[]>([])
+  const [terms, setTerms] = useState<TermsCondition[]>([])
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([])
   const [videos, setVideos] = useState<VideoType[]>([])
   const [settings, setSettings] = useState<SettingsMap>({})
@@ -58,8 +59,9 @@ export default function App() {
 
   useEffect(() => {
     async function fetchAll() {
-      const [pkgRes, portfolioRes, videoRes, settingsRes, contentRes] = await Promise.all([
+      const [pkgRes, termsRes, portfolioRes, videoRes, settingsRes, contentRes] = await Promise.all([
         supabase.from('packages').select('*').eq('is_active', true).order('sort_order'),
+        supabase.from('terms_conditions').select('*').eq('is_active', true).order('sort_order'),
         supabase.from('portfolio_items').select('*').eq('is_visible', true).order('sort_order'),
         supabase.from('videos').select('*').eq('is_visible', true).order('sort_order'),
         supabase.from('site_settings').select('key, value'),
@@ -67,6 +69,7 @@ export default function App() {
       ])
 
       if (pkgRes.data) setPackages(pkgRes.data)
+      if (termsRes.data) setTerms(termsRes.data)
       if (portfolioRes.data) setPortfolio(portfolioRes.data)
       if (videoRes.data) setVideos(videoRes.data)
 
@@ -318,6 +321,33 @@ export default function App() {
               ))}
             </div>
           )}
+
+          {/* Terms & Conditions */}
+          {!loading && terms.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}
+              className="max-w-4xl mx-auto mt-20 bg-gradient-to-br from-[#1a1a24] to-[#0f0f16] rounded-3xl border border-[#d4af37]/20 p-8 md:p-10"
+            >
+              <div className="flex items-center gap-3 mb-8">
+                <ScrollText className="w-7 h-7 text-[#d4af37] flex-shrink-0" />
+                <h3 className="font-bold text-[#d4af37]" style={{ fontSize: 'clamp(1.4rem, 3vw, 1.9rem)', fontFamily: "'Tajawal', sans-serif" }}>
+                  الشروط والأحكام
+                </h3>
+              </div>
+              <ul className="space-y-4">
+                {terms.map((term, index) => (
+                  <motion.li
+                    key={term.id}
+                    initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: index * 0.06 }}
+                    className="flex items-start gap-3"
+                  >
+                    <span className="text-[#d4af37] mt-1 flex-shrink-0 leading-none" style={{ fontSize: '0.9rem' }}>◄</span>
+                    <p className="text-gray-300 leading-relaxed" style={{ fontSize: '1.05rem' }}>{term.text}</p>
+                  </motion.li>
+                ))}
+              </ul>
+            </motion.div>
+          )}
         </div>
       </section>
 
@@ -430,7 +460,11 @@ export default function App() {
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 50 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="relative">
               <div className="relative rounded-3xl overflow-hidden">
-                <img src="https://images.unsplash.com/photo-1622015663084-307d19eabbbf?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080" alt="About" className="w-full aspect-square object-cover" />
+                <img
+                  src={c('about','image_url','https://images.unsplash.com/photo-1622015663084-307d19eabbbf?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080')}
+                  alt="عن المصور"
+                  className="w-full aspect-square object-cover"
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0f] to-transparent opacity-50" />
               </div>
               <div className="absolute -bottom-6 -left-6 w-32 h-32 bg-[#d4af37] opacity-20 blur-3xl" />

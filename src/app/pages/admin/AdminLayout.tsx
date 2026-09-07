@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Routes, Route, useLocation, useNavigate, Link } from 'react-router'
 import {
   Camera, LayoutDashboard, Images, Video,
-  Package, FileText, Settings as SettingsIcon, LogOut, Menu, X
+  Package, FileText, ScrollText, ReceiptText, FileSignature, Settings as SettingsIcon, LogOut, Menu, X
 } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import Overview from './Overview'
@@ -10,6 +10,9 @@ import Portfolio from './Portfolio'
 import Videos from './Videos'
 import Packages from './Packages'
 import Content from './Content'
+import Terms from './Terms'
+import Quotations from './Quotations'
+import Contracts from './Contracts'
 import Settings from './Settings'
 
 // Placeholder for phases 3 sections still to come
@@ -29,6 +32,9 @@ const navItems = [
   { path: '/admin/videos', label: 'الفيديوهات', icon: Video },
   { path: '/admin/packages', label: 'الباقات', icon: Package },
   { path: '/admin/content', label: 'المحتوى', icon: FileText },
+  { path: '/admin/terms', label: 'الشروط والأحكام', icon: ScrollText },
+  { path: '/admin/quotations', label: 'عروض الأسعار', icon: ReceiptText },
+  { path: '/admin/contracts', label: 'العقود', icon: FileSignature },
   { path: '/admin/settings', label: 'الإعدادات', icon: SettingsIcon },
 ]
 
@@ -153,6 +159,9 @@ export default function AdminLayout() {
             <Route path="videos" element={<Videos />} />
             <Route path="packages" element={<Packages />} />
             <Route path="content" element={<Content />} />
+            <Route path="terms" element={<Terms />} />
+            <Route path="quotations" element={<Quotations />} />
+            <Route path="contracts" element={<Contracts />} />
             <Route path="settings" element={<Settings />} />
           </Routes>
         </main>
