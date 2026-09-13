@@ -10,6 +10,7 @@ export default function Videos() {
   const [dragOver, setDragOver] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -27,7 +28,8 @@ export default function Videos() {
   }
 
   async function uploadVideo(file: File) {
-    if (!file.type.startsWith('video/')) return
+    if (!file.type.startsWith('video/')) { setError('الملف المختار ليس فيديو'); return }
+    setError(null)
     setUploading(true)
 
     const ext = file.name.split('.').pop() ?? 'mp4'
@@ -38,20 +40,26 @@ export default function Videos() {
       .upload(path, file, { cacheControl: '3600', upsert: false })
 
     if (uploadError) {
-      console.error('Upload failed:', uploadError.message)
+      setError(`تعذّر رفع الملف: ${uploadError.message}`)
       setUploading(false)
       return
     }
 
     const { data: urlData } = supabase.storage.from('videos').getPublicUrl(path)
 
-    await supabase.from('videos').insert({
+    const { error: insertError } = await supabase.from('videos').insert({
       storage_path: path,
       public_url: urlData.publicUrl,
       title: file.name.replace(/\.[^.]+$/, '') || 'فيديو سينمائي',
       is_visible: true,
       sort_order: videos.length,
     })
+
+    if (insertError) {
+      // Don't leave an orphan file in storage when the row can't be saved
+      await supabase.storage.from('videos').remove([path])
+      setError(`تم رفع الملف لكن تعذّر حفظه: ${insertError.message}`)
+    }
 
     setUploading(false)
     await fetchVideos()
@@ -108,6 +116,15 @@ export default function Videos() {
           رفع فيديو
         </button>
       </div>
+
+      {error && (
+        <div className="mb-6 flex items-start justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-red-300/70 hover:text-red-200" aria-label="إغلاق">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Upload Dropzone */}
       <div

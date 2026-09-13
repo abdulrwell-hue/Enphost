@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  ArrowRight, Save, Plus, Trash2, Printer, MessageCircle,
-  CheckCircle, Scale, Building2, User, FileSignature,
+  ArrowRight, Save, Printer, MessageCircle,
+  CheckCircle, Scale, Building2, User, FileSignature, Package as PackageIcon,
 } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import type { Contract, ContractClause, Quotation } from '../../../lib/types'
-import { formatSAR } from '../../../lib/pricing'
 import {
-  PORTFOLIO_USAGE_OPTIONS, contractTotals, itemsFromQuotation, newContractItem,
-  type ContractClauseSnapshot, type ContractItem, type ContractStatus, type PortfolioUsage,
+  cloneItems, formatSAR, lineAmount, normalizeItems, packageItemOf, servicesBase,
+  type ServiceItem,
+} from '../../../lib/catalog'
+import {
+  PORTFOLIO_USAGE_OPTIONS, contractTotals,
+  type ContractClauseSnapshot, type ContractStatus, type PortfolioUsage,
 } from '../../../lib/contracts'
 import ContractPrint, { type ContractPrintData } from './ContractPrint'
+import DateField from '../../components/admin/DateField'
+import TimeField from '../../components/admin/TimeField'
+import ServicesEditor from '../../components/admin/ServicesEditor'
+import { arDate, arTime, inDays, todayISO } from '../../../lib/datetime'
 
 interface Props {
   /** العقد المحفوظ الجاري تعديله — null لعقد جديد */
@@ -27,23 +34,6 @@ const STATUS_OPTIONS: { value: ContractStatus; label: string }[] = [
   { value: 'signed',    label: 'موقّع' },
   { value: 'cancelled', label: 'ملغي' },
 ]
-
-/**
- * YYYY-MM-DD في التوقيت المحلي. toISOString() يعطي توقيت UTC، فيرجع تاريخ الأمس
- * لأي عقد يُنشأ بعد منتصف الليل بتوقيت الرياض (UTC+3).
- */
-const localISO = (d: Date) =>
-  new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
-
-const todayISO = () => localISO(new Date())
-const inDays = (n: number) => localISO(new Date(Date.now() + n * 86400000))
-
-/** 2026-09-06 → 06 / 09 / 2026م */
-const arDate = (iso: string) => {
-  if (!iso) return ''
-  const [y, m, d] = iso.split('-')
-  return `${d} / ${m} / ${y}م`
-}
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -117,8 +107,10 @@ export default function ContractEditor({ contract, fromQuotation = null, onBack,
   const [siteContactPhone, setSiteContactPhone] = useState(c?.site_contact_phone ?? '')
 
   // ── الخدمات والمالية ───────────────────────────────────────────────────────
-  const [items, setItems] = useState<ContractItem[]>(
-    c?.items ?? (fromQuotation ? itemsFromQuotation(fromQuotation.items) : []),
+  const [items, setItems] = useState<ServiceItem[]>(() =>
+    c ? normalizeItems(c.items)
+      : fromQuotation ? cloneItems(normalizeItems(fromQuotation.items))
+      : [],
   )
   const [discountPct, setDiscountPct] = useState(Number(c?.discount_pct ?? fromQuotation?.discount_pct ?? 0))
   const [vatEnabled, setVatEnabled]   = useState(c?.vat_enabled ?? fromQuotation?.vat_enabled ?? true)
@@ -178,10 +170,6 @@ export default function ContractEditor({ contract, fromQuotation = null, onBack,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function editItem(id: string, patch: Partial<ContractItem>) {
-    setItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
-  }
-
   const printData: ContractPrintData = {
     contractNumber: record?.contract_number ?? 'مسودة',
     orderNumber,
@@ -198,7 +186,7 @@ export default function ContractEditor({ contract, fromQuotation = null, onBack,
       repName: clientRepName, repTitle: clientRepTitle, phone: clientPhone, email: clientEmail,
     },
     propertyName, propertyLocation,
-    shootDate: arDate(shootDate), shootTime,
+    shootDate: arDate(shootDate), shootTime: arTime(shootTime),
     siteContactName, siteContactPhone,
     items, totals, discountPct, vatEnabled, vatPct, depositPct, balanceDueOn,
     revisionRounds, deliveryFormat, platforms,
@@ -258,6 +246,7 @@ export default function ContractEditor({ contract, fromQuotation = null, onBack,
       site_contact_name: siteContactName.trim() || null,
       site_contact_phone: siteContactPhone.trim() || null,
 
+      package_id: packageItemOf(items)?.refId ?? null,
       items,
       discount_pct: discountPct,
       discount_amount: totals.discountAmount,
@@ -307,14 +296,15 @@ export default function ContractEditor({ contract, fromQuotation = null, onBack,
 
   function shareWhatsApp() {
     const phone = clientPhone.replace(/\D/g, '')
+    const base = servicesBase(items)
     const lines = [
       `*عقد خدمات تصوير — ${businessName || 'Enpho Studio'}*`,
       record?.contract_number ? `رقم العقد: ${record.contract_number}` : '',
       propertyName ? `العقار: ${propertyName}` : '',
       propertyLocation ? `الموقع: ${propertyLocation}` : '',
-      shootDate ? `موعد التصوير: ${arDate(shootDate)}${shootTime ? ` — ${shootTime}` : ''}` : '',
+      shootDate ? `موعد التصوير: ${arDate(shootDate)}${shootTime ? ` — ${arTime(shootTime)}` : ''}` : '',
       '',
-      ...items.map(i => `• ${i.service} — ${formatSAR(i.price)} ر.س`),
+      ...items.map(i => `• ${i.name} — ${formatSAR(lineAmount(i, base))} ر.س`),
       '',
       `الإجمالي قبل الضريبة: ${formatSAR(totals.afterDiscount)} ر.س`,
       vatEnabled ? `الضريبة (${vatPct}%): ${formatSAR(totals.vatAmount)} ر.س` : '',
@@ -409,20 +399,17 @@ export default function ContractEditor({ contract, fromQuotation = null, onBack,
                   dir="ltr" placeholder="ENP-WO-2026-0001" className={inputClass} />
               </Field>
               <Field label="تاريخ التوقيع">
-                <input type="date" value={signDate} onChange={e => setSignDate(e.target.value)}
-                  className={inputClass} />
+                <DateField value={signDate} onChange={setSignDate} />
               </Field>
               <Field label="مدينة التوقيع">
                 <input value={signCity} onChange={e => setSignCity(e.target.value)}
                   placeholder="الرياض" className={inputClass} />
               </Field>
               <Field label="مدة العقد — من">
-                <input type="date" value={durationFrom} onChange={e => setDurationFrom(e.target.value)}
-                  className={inputClass} />
+                <DateField value={durationFrom} onChange={setDurationFrom} />
               </Field>
               <Field label="مدة العقد — إلى">
-                <input type="date" value={durationTo} onChange={e => setDurationTo(e.target.value)}
-                  className={inputClass} />
+                <DateField value={durationTo} onChange={setDurationTo} />
               </Field>
               <Field label="حالة العقد">
                 <select value={status} onChange={e => setStatus(e.target.value as ContractStatus)}
@@ -517,12 +504,10 @@ export default function ContractEditor({ contract, fromQuotation = null, onBack,
                   placeholder="الرياض" className={inputClass} />
               </Field>
               <Field label="تاريخ التصوير">
-                <input type="date" value={shootDate} onChange={e => setShootDate(e.target.value)}
-                  className={inputClass} />
+                <DateField value={shootDate} onChange={setShootDate} />
               </Field>
               <Field label="ساعة التصوير">
-                <input value={shootTime} onChange={e => setShootTime(e.target.value)}
-                  placeholder="10:00 صباحاً" className={inputClass} />
+                <TimeField value={shootTime} onChange={setShootTime} />
               </Field>
               <Field label="جهة الاتصال بالموقع — الاسم">
                 <input value={siteContactName} onChange={e => setSiteContactName(e.target.value)}
@@ -537,80 +522,17 @@ export default function ContractEditor({ contract, fromQuotation = null, onBack,
 
           {/* جدول الخدمات */}
           <section className="bg-[#1a1a24] rounded-2xl border border-white/5 p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <div>
-                <h2 className="text-white font-bold">جدول الخدمات</h2>
-                <p className="text-gray-500 text-xs mt-0.5">
-                  {fromQuotation
-                    ? 'منقولة من عرض السعر — عدّلها كما تشاء'
-                    : 'الخدمة، المواصفات، مدة التسليم، والسعر'}
-                </p>
-              </div>
-              <button
-                onClick={() => setItems(prev => [...prev, newContractItem()])}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 transition-all"
-              >
-                <Plus className="w-4 h-4" />
-                خدمة
-              </button>
+            <div className="flex items-center gap-2 mb-1">
+              <PackageIcon className="w-5 h-5 text-[#d4af37]" />
+              <h2 className="text-white font-bold">جدول الخدمات</h2>
             </div>
+            <p className="text-gray-500 text-xs mb-5">
+              {fromQuotation
+                ? 'منقولة من عرض السعر — غيّر الباقة أو الإضافات أو عدّل أي بند'
+                : 'اختر الباقة والإضافات — تُملأ الخدمة والمواصفات ومدة التسليم والسعر تلقائياً'}
+            </p>
 
-            {items.length === 0 ? (
-              <p className="text-gray-600 text-sm text-center py-10">لا توجد خدمات بعد</p>
-            ) : (
-              <div className="space-y-3">
-                {items.map(item => (
-                  <div key={item.id} className="bg-[#0f0f16] rounded-xl border border-white/5 p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 space-y-2">
-                        <input
-                          value={item.service}
-                          onChange={e => editItem(item.id, { service: e.target.value })}
-                          placeholder="اسم الخدمة — تصوير فوتوغرافي داخلي وخارجي"
-                          className="w-full bg-transparent text-white font-bold text-sm focus:outline-none placeholder-gray-600"
-                        />
-                        <input
-                          value={item.spec}
-                          onChange={e => editItem(item.id, { spec: e.target.value })}
-                          placeholder="المواصفات / الكمية — 10 صور للوحدة، معالجة متقدمة"
-                          className="w-full bg-transparent text-gray-500 text-xs focus:outline-none placeholder-gray-700"
-                        />
-                      </div>
-                      <button
-                        onClick={() => setItems(prev => prev.filter(i => i.id !== item.id))}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-all flex-shrink-0"
-                        title="حذف الخدمة"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-white/5">
-                      <label className="flex items-center gap-2">
-                        <span className="text-gray-500 text-xs">مدة التسليم</span>
-                        <input
-                          value={item.delivery}
-                          onChange={e => editItem(item.id, { delivery: e.target.value })}
-                          placeholder="5 أيام عمل"
-                          className="w-32 bg-[#1a1a24] border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm placeholder-gray-700 focus:outline-none focus:border-[#d4af37]/40"
-                        />
-                      </label>
-                      <label className="flex items-center gap-2">
-                        <span className="text-gray-500 text-xs">السعر</span>
-                        <input
-                          type="number" min={0} value={item.price}
-                          onChange={e => editItem(item.id, { price: Number(e.target.value) })}
-                          className="w-32 bg-[#1a1a24] border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-[#d4af37]/40"
-                        />
-                      </label>
-                      <span className="mr-auto text-[#d4af37] font-bold text-sm">
-                        {formatSAR(item.price)} ر.س
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <ServicesEditor items={items} onChange={setItems} />
 
             {/* القيمة والدفعات */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-white/5">

@@ -1,7 +1,9 @@
-import { formatSAR } from '../../../lib/pricing'
+import {
+  formatSAR, lineAmount, servicesBase, specLine, type ServiceItem,
+} from '../../../lib/catalog'
 import {
   portfolioUsageLabel,
-  type ContractClauseSnapshot, type ContractItem, type ContractTotals,
+  type ContractClauseSnapshot, type ContractTotals,
 } from '../../../lib/contracts'
 
 export interface ContractPrintData {
@@ -28,7 +30,7 @@ export interface ContractPrintData {
   siteContactName: string
   siteContactPhone: string
 
-  items: ContractItem[]
+  items: ServiceItem[]
   totals: ContractTotals
   discountPct: number
   vatEnabled: boolean
@@ -123,6 +125,7 @@ export default function ContractPrint({ data }: { data: ContractPrintData }) {
     rawFilesIncluded, rawFilesPrice, travelFeeIncluded, travelFee,
     rescheduleTerms, portfolioUsage, notes, clauses, businessName,
   } = data
+  const base = servicesBase(items)
 
   return (
     <div
@@ -249,16 +252,16 @@ export default function ContractPrint({ data }: { data: ContractPrintData }) {
             ) : items.map(item => (
               <tr key={item.id} style={{ breakInside: 'avoid' }}>
                 <td className="py-2 px-2.5 border border-[#e6ddc4] align-top font-bold">
-                  {item.service || '—'}
+                  {item.name || '—'}
                 </td>
                 <td className="py-2 px-2.5 border border-[#e6ddc4] align-top text-[#555]">
-                  {item.spec || '—'}
+                  {specLine(item) || '—'}
                 </td>
                 <td className="py-2 px-2.5 border border-[#e6ddc4] align-top text-center">
                   {item.delivery || '—'}
                 </td>
                 <td className="py-2 px-2.5 border border-[#e6ddc4] align-top text-center font-bold">
-                  {formatSAR(item.price)}
+                  {formatSAR(lineAmount(item, base))}
                 </td>
               </tr>
             ))}

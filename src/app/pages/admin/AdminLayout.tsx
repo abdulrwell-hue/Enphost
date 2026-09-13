@@ -2,13 +2,15 @@ import { useState } from 'react'
 import { Routes, Route, useLocation, useNavigate, Link } from 'react-router'
 import {
   Camera, LayoutDashboard, Images, Video,
-  Package, FileText, ScrollText, ReceiptText, FileSignature, Settings as SettingsIcon, LogOut, Menu, X
+  Package, Sparkles, FileText, ScrollText, ReceiptText, FileSignature, Settings as SettingsIcon, LogOut, Menu, X
 } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
+import { useNoIndex } from '../../site/seo'
 import Overview from './Overview'
 import Portfolio from './Portfolio'
 import Videos from './Videos'
 import Packages from './Packages'
+import Addons from './Addons'
 import Content from './Content'
 import Terms from './Terms'
 import Quotations from './Quotations'
@@ -26,19 +28,37 @@ const ComingSoon = ({ title }: { title: string }) => (
   </div>
 )
 
-const navItems = [
-  { path: '/admin', label: 'الرئيسية', icon: LayoutDashboard, exact: true },
-  { path: '/admin/portfolio', label: 'البورتفوليو', icon: Images },
-  { path: '/admin/videos', label: 'الفيديوهات', icon: Video },
-  { path: '/admin/packages', label: 'الباقات', icon: Package },
-  { path: '/admin/content', label: 'المحتوى', icon: FileText },
-  { path: '/admin/terms', label: 'الشروط والأحكام', icon: ScrollText },
-  { path: '/admin/quotations', label: 'عروض الأسعار', icon: ReceiptText },
-  { path: '/admin/contracts', label: 'العقود', icon: FileSignature },
-  { path: '/admin/settings', label: 'الإعدادات', icon: SettingsIcon },
-]
+const navGroups = [
+  {
+    label: null,
+    items: [{ path: '/admin', label: 'الرئيسية', icon: LayoutDashboard, exact: true }],
+  },
+  {
+    label: 'محتوى الموقع',
+    items: [
+      { path: '/admin/portfolio', label: 'البورتفوليو', icon: Images },
+      { path: '/admin/videos', label: 'الفيديوهات', icon: Video },
+      { path: '/admin/content', label: 'المحتوى', icon: FileText },
+      { path: '/admin/terms', label: 'الشروط والأحكام', icon: ScrollText },
+    ],
+  },
+  {
+    label: 'المبيعات',
+    items: [
+      { path: '/admin/packages', label: 'الباقات', icon: Package },
+      { path: '/admin/addons', label: 'الخدمات الإضافية', icon: Sparkles },
+      { path: '/admin/quotations', label: 'عروض الأسعار', icon: ReceiptText },
+      { path: '/admin/contracts', label: 'العقود', icon: FileSignature },
+    ],
+  },
+  {
+    label: 'النظام',
+    items: [{ path: '/admin/settings', label: 'الإعدادات', icon: SettingsIcon }],
+  },
+] as const
 
 export default function AdminLayout() {
+  useNoIndex()
   const location = useLocation()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -68,25 +88,32 @@ export default function AdminLayout() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {navItems.map(item => {
-          const active = isActive(item.path, item.exact)
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              onClick={() => setSidebarOpen(false)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-150 ${
-                active
-                  ? 'bg-[#d4af37]/15 text-[#d4af37] border border-[#d4af37]/20'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <item.icon className="w-5 h-5 flex-shrink-0" />
-              {item.label}
-            </Link>
-          )
-        })}
+      <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
+        {navGroups.map((group, gi) => (
+          <div key={gi} className="space-y-1">
+            {group.label && (
+              <p className="px-4 pb-1 text-[11px] font-semibold text-gray-600 tracking-wide">{group.label}</p>
+            )}
+            {group.items.map(item => {
+              const active = isActive(item.path, 'exact' in item ? item.exact : false)
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 border ${
+                    active
+                      ? 'bg-[#d4af37]/15 text-[#d4af37] border-[#d4af37]/20'
+                      : 'text-gray-400 border-transparent hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <item.icon className="w-5 h-5 flex-shrink-0" />
+                  {item.label}
+                </Link>
+              )
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* Footer */}
@@ -158,6 +185,7 @@ export default function AdminLayout() {
             <Route path="portfolio" element={<Portfolio />} />
             <Route path="videos" element={<Videos />} />
             <Route path="packages" element={<Packages />} />
+            <Route path="addons" element={<Addons />} />
             <Route path="content" element={<Content />} />
             <Route path="terms" element={<Terms />} />
             <Route path="quotations" element={<Quotations />} />

@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router'
 import { Camera, Lock, Mail, Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useNoIndex } from '../site/seo'
 
 export default function AdminLogin() {
+  useNoIndex('تسجيل الدخول')
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

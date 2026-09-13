@@ -25,7 +25,13 @@ export interface Package {
   id: string
   created_at: string
   name: string
+  /** مناسبة لـ — شقة / Airbnb / مكتب صغير */
+  suitable_for: string | null
+  /** السعر المبدئي — الحد الأدنى للنطاق */
   price: number
+  price_max: number | null
+  /** مدة التسليم التقريبية */
+  delivery: string | null
   features: string[]
   is_popular: boolean
   is_active: boolean
@@ -70,8 +76,8 @@ export interface Quotation {
   project_location: string | null
   valid_until: string | null
   notes: string | null
-  config: import('./pricing').QuoteInput
-  items: import('./pricing').LineItem[]
+  package_id: string | null
+  items: import('./catalog').ServiceItem[]
   terms: string[]
   discount_pct: number
   vat_enabled: boolean
@@ -134,7 +140,8 @@ export interface Contract {
   site_contact_name: string | null
   site_contact_phone: string | null
 
-  items: import('./contracts').ContractItem[]
+  package_id: string | null
+  items: import('./catalog').ServiceItem[]
 
   discount_pct: number
   discount_amount: number
