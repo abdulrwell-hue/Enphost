@@ -61,7 +61,10 @@ export default function Packages() {
 
     const { error } = await supabase.from('packages').update({
       name: pkg.name,
+      suitable_for: pkg.suitable_for?.trim() || null,
       price: pkg.price,
+      price_max: pkg.price_max,
+      delivery: pkg.delivery?.trim() || null,
       features: pkg.features,
       is_popular: pkg.is_popular,
       is_active: pkg.is_active,
@@ -172,23 +175,58 @@ export default function Packages() {
                   />
                 </div>
 
-                {/* Price */}
+                {/* Suitable for */}
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1.5 block">السعر (ريال)</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={pkg.price}
-                      onChange={e => updateField(pkg.id, 'price', Number(e.target.value))}
-                      className="w-full bg-[#0f0f16] border border-white/10 rounded-xl px-3 py-2.5 text-[#d4af37] font-bold text-2xl focus:outline-none focus:border-[#d4af37]/50 transition-colors"
-                    />
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">ر.س</span>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1.5 block">مناسبة لـ</label>
+                  <input
+                    value={pkg.suitable_for ?? ''}
+                    onChange={e => updateField(pkg.id, 'suitable_for', e.target.value)}
+                    placeholder="شقة / Airbnb / مكتب صغير"
+                    className="w-full bg-[#0f0f16] border border-white/10 rounded-xl px-3 py-2.5 text-gray-300 text-sm placeholder-gray-600 focus:outline-none focus:border-[#d4af37]/50 transition-colors"
+                  />
+                </div>
+
+                {/* Price range */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1.5 block">السعر المبدئي (ريال)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={pkg.price}
+                        onChange={e => updateField(pkg.id, 'price', Number(e.target.value))}
+                        className="w-full bg-[#0f0f16] border border-white/10 rounded-xl px-3 py-2.5 text-[#d4af37] font-bold text-xl focus:outline-none focus:border-[#d4af37]/50 transition-colors"
+                      />
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 text-xs">من</span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={pkg.price_max ?? ''}
+                        placeholder="—"
+                        onChange={e => updateField(pkg.id, 'price_max', e.target.value === '' ? null : Number(e.target.value))}
+                        className="w-full bg-[#0f0f16] border border-white/10 rounded-xl px-3 py-2.5 text-[#d4af37] font-bold text-xl placeholder-gray-700 focus:outline-none focus:border-[#d4af37]/50 transition-colors"
+                      />
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 text-xs">إلى</span>
+                    </div>
                   </div>
+                  <p className="text-gray-600 text-xs mt-1">«من» هو السعر الذي يظهر في الموقع ويُقترح في العقد</p>
+                </div>
+
+                {/* Delivery */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1.5 block">مدة التسليم التقريبية</label>
+                  <input
+                    value={pkg.delivery ?? ''}
+                    onChange={e => updateField(pkg.id, 'delivery', e.target.value)}
+                    placeholder="5 أيام عمل"
+                    className="w-full bg-[#0f0f16] border border-white/10 rounded-xl px-3 py-2.5 text-gray-300 text-sm placeholder-gray-600 focus:outline-none focus:border-[#d4af37]/50 transition-colors"
+                  />
                 </div>
 
                 {/* Features */}
                 <div className="flex-1">
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2 block">المميزات</label>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2 block">ماذا تشمل</label>
                   <div className="space-y-2 mb-3">
                     {pkg.features.map((feature, idx) => (
                       <div key={idx} className="flex items-center gap-2 group">

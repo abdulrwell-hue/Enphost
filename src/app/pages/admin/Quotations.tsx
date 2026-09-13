@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Plus, FileText, Trash2, Copy, Search, SlidersHorizontal, FileSignature } from 'lucide-react'
+import { Plus, FileText, Trash2, Copy, Search, FileSignature } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import type { Quotation, QuotationStatus } from '../../../lib/types'
-import { DEFAULT_PRICING, formatSAR, mergePricing, type PricingConfig } from '../../../lib/pricing'
+import { formatSAR } from '../../../lib/catalog'
 import QuotationEditor from './QuotationEditor'
-import QuotationPricingSettings, { PRICING_SETTINGS_KEY } from './QuotationPricingSettings'
+import PackageBadge from '../../components/admin/PackageBadge'
 
 const STATUS_META: Record<QuotationStatus, { label: string; className: string }> = {
   draft:    { label: 'مسودة',      className: 'bg-white/5 text-gray-400' },
@@ -23,12 +23,10 @@ const formatDate = (iso: string) => {
 export default function Quotations() {
   const navigate = useNavigate()
   const [quotations, setQuotations] = useState<Quotation[]>([])
-  const [config, setConfig] = useState<PricingConfig>(DEFAULT_PRICING)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<QuotationStatus | 'all'>('all')
-  const [showPricingSettings, setShowPricingSettings] = useState(false)
 
   /** null = القائمة، undefined = عرض جديد، Quotation = تعديل */
   const [editing, setEditing] = useState<Quotation | null | undefined>(null)
@@ -37,21 +35,11 @@ export default function Quotations() {
 
   async function load() {
     setLoading(true)
-    const [quotesRes, settingsRes] = await Promise.all([
-      supabase.from('quotations').select('*').order('created_at', { ascending: false }),
-      supabase.from('site_settings').select('value').eq('key', PRICING_SETTINGS_KEY).maybeSingle(),
-    ])
+    const { data, error } = await supabase
+      .from('quotations').select('*').order('created_at', { ascending: false })
 
-    if (quotesRes.error) setError(quotesRes.error.message)
-    else setQuotations((quotesRes.data ?? []) as Quotation[])
-
-    if (settingsRes.data?.value) {
-      try {
-        setConfig(mergePricing(JSON.parse(settingsRes.data.value)))
-      } catch {
-        setConfig(DEFAULT_PRICING)
-      }
-    }
+    if (error) setError(error.message)
+    else setQuotations((data ?? []) as Quotation[])
     setLoading(false)
   }
 
@@ -83,8 +71,6 @@ export default function Quotations() {
         // نسخة مكرّرة تُعامل كعرض جديد لكن ببيانات مسبقة
         quotation={editing === undefined || isDuplicate ? null : editing}
         seed={isDuplicate ? editing : null}
-        config={config}
-        onConfigChange={setConfig}
         onBack={() => { setEditing(null); load() }}
         onSaved={load}
       />
@@ -112,13 +98,6 @@ export default function Quotations() {
           <p className="text-gray-400 mt-1">{quotations.length} عرض — أنشئ عرضاً وأرسله للعميل</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowPricingSettings(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 transition-all"
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-            إعدادات التسعير
-          </button>
           <button
             onClick={() => setEditing(undefined)}
             className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold bg-gradient-to-r from-[#d4af37] to-[#f4d799] text-[#0a0a0f] hover:opacity-90 shadow-lg shadow-[#d4af37]/20 transition-all"
@@ -172,7 +151,7 @@ export default function Quotations() {
           </p>
           <p className="text-sm mt-1">
             {quotations.length === 0
-              ? 'ابدأ بإنشاء عرض سعر جديد — الحاسبة تقترح السعر تلقائياً'
+              ? 'ابدأ بإنشاء عرض سعر جديد — اختر الباقة والإضافات وتُملأ الأسعار تلقائياً'
               : 'جرّب كلمة بحث أخرى أو غيّر الفلتر'}
           </p>
         </div>
@@ -193,6 +172,7 @@ export default function Quotations() {
                     <span className={`px-2.5 py-0.5 rounded-lg text-xs ${STATUS_META[q.status]?.className ?? ''}`}>
                       {STATUS_META[q.status]?.label ?? q.status}
                     </span>
+                    <PackageBadge items={q.items} />
                   </div>
                   <p className="text-gray-500 text-sm mt-1">
                     {q.quote_number}
@@ -236,14 +216,6 @@ export default function Quotations() {
             </div>
           ))}
         </div>
-      )}
-
-      {showPricingSettings && (
-        <QuotationPricingSettings
-          config={config}
-          onClose={() => setShowPricingSettings(false)}
-          onSaved={setConfig}
-        />
       )}
     </div>
   )

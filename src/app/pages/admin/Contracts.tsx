@@ -3,10 +3,11 @@ import { useSearchParams } from 'react-router'
 import { Plus, FileSignature, Trash2, Search, Scale, ReceiptText } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import type { Contract, Quotation } from '../../../lib/types'
-import { formatSAR } from '../../../lib/pricing'
+import { formatSAR } from '../../../lib/catalog'
 import type { ContractStatus } from '../../../lib/contracts'
 import ContractEditor from './ContractEditor'
 import ContractClauses from './ContractClauses'
+import PackageBadge from '../../components/admin/PackageBadge'
 
 const STATUS_META: Record<ContractStatus, { label: string; className: string }> = {
   draft:     { label: 'مسودة', className: 'bg-white/5 text-gray-400' },
@@ -205,6 +206,7 @@ export default function Contracts() {
                     <span className={`px-2.5 py-0.5 rounded-lg text-xs ${STATUS_META[ct.status]?.className ?? ''}`}>
                       {STATUS_META[ct.status]?.label ?? ct.status}
                     </span>
+                    <PackageBadge items={ct.items} />
                     {ct.quotation_id && (
                       <span
                         title="محوَّل من عرض سعر"

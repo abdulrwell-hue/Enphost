@@ -1,24 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  ArrowRight, Save, Plus, Trash2, Printer, MessageCircle, Wand2,
-  AlertTriangle, CheckCircle, SlidersHorizontal, Calculator,
+  ArrowRight, Save, Trash2, Printer, MessageCircle, CheckCircle, Package as PackageIcon,
 } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import type { Quotation, QuotationStatus } from '../../../lib/types'
 import {
-  DEFAULT_INPUT, TIERS, estimate, formatSAR, newLineItem, totalsFor,
-  type LineItem, type PricingConfig, type QuoteInput,
-} from '../../../lib/pricing'
+  formatSAR, lineAmount, normalizeItems, packageItemOf, serviceTotals, servicesBase,
+  type ServiceItem,
+} from '../../../lib/catalog'
 import QuotationPrint, { type PrintData } from './QuotationPrint'
-import QuotationPricingSettings from './QuotationPricingSettings'
+import DateField from '../../components/admin/DateField'
+import ServicesEditor from '../../components/admin/ServicesEditor'
+import { inDays, todayISO } from '../../../lib/datetime'
 
 interface Props {
   /** العرض المحفوظ الجاري تعديله — null لعرض جديد */
   quotation: Quotation | null
   /** بيانات مبدئية لعرض جديد (نسخة من عرض سابق) */
   seed?: Quotation | null
-  config: PricingConfig
-  onConfigChange: (config: PricingConfig) => void
   onBack: () => void
   onSaved: () => void
 }
@@ -30,8 +29,6 @@ const STATUS_OPTIONS: { value: QuotationStatus; label: string }[] = [
   { value: 'rejected', label: 'مرفوض' },
 ]
 
-const todayISO = () => new Date().toISOString().slice(0, 10)
-const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10)
 const formatDate = (iso: string) => {
   if (!iso) return ''
   const [y, m, d] = iso.split('-')
@@ -53,9 +50,7 @@ function Field({
 const inputClass =
   'w-full bg-[#0f0f16] border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-[#d4af37]/40 transition-colors'
 
-export default function QuotationEditor({
-  quotation, seed = null, config, onConfigChange, onBack, onSaved,
-}: Props) {
+export default function QuotationEditor({ quotation, seed = null, onBack, onSaved }: Props) {
   /** مصدر القيم المبدئية: العرض المحفوظ، أو النسخة المكرّرة، أو لا شيء */
   const source = quotation ?? seed
   /** الصف المحفوظ فعلياً — يُملأ بعد أول حفظ حتى لا يتكرر الإدراج */
@@ -72,34 +67,24 @@ export default function QuotationEditor({
   const [validUntil, setValidUntil] = useState(source?.valid_until ?? inDays(15))
   const [notes, setNotes] = useState(source?.notes ?? '')
 
-  // ── Calculator ─────────────────────────────────────────────────────────────
-  const [input, setInput] = useState<QuoteInput>({ ...DEFAULT_INPUT, ...(source?.config ?? {}) })
-  const [items, setItems] = useState<LineItem[]>(source?.items ?? [])
-  /** يتوقف التوليد التلقائي بمجرد تعديل البنود يدوياً */
-  const [autoItems, setAutoItems] = useState(!source)
-
+  // ── Services ───────────────────────────────────────────────────────────────
+  const [items, setItems] = useState<ServiceItem[]>(() => normalizeItems(source?.items))
   const [discountPct, setDiscountPct] = useState(Number(source?.discount_pct ?? 0))
   const [vatEnabled, setVatEnabled] = useState(source?.vat_enabled ?? true)
-  const [vatPct, setVatPct] = useState(Number(source?.vat_pct ?? config.vatPct))
+  const [vatPct, setVatPct] = useState(Number(source?.vat_pct ?? 15))
 
   const [terms, setTerms] = useState<string[]>(source?.terms ?? [])
   const [business, setBusiness] = useState({ name: '', phone: '', email: '', instagram: '' })
 
-  const [showPricingSettings, setShowPricingSettings] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const est = useMemo(() => estimate(input, config), [input, config])
   const totals = useMemo(
-    () => totalsFor(items, discountPct, vatEnabled, vatPct),
+    () => serviceTotals(items, discountPct, vatEnabled, vatPct),
     [items, discountPct, vatEnabled, vatPct],
   )
-
-  // Seed items from the calculator until the admin edits them by hand
-  useEffect(() => {
-    if (autoItems) setItems(est.items)
-  }, [est, autoItems])
+  const packageItem = packageItemOf(items)
 
   // Business info + default terms (new quotes only keep a live snapshot)
   useEffect(() => {
@@ -125,43 +110,7 @@ export default function QuotationEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function patchInput(patch: Partial<QuoteInput>) {
-    setInput(prev => ({ ...prev, ...patch }))
-  }
-
-  function editItem(id: string, patch: Partial<LineItem>) {
-    setAutoItems(false)
-    setItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
-  }
-
-  function removeItem(id: string) {
-    setAutoItems(false)
-    setItems(prev => prev.filter(i => i.id !== id))
-  }
-
-  function addItem() {
-    setAutoItems(false)
-    setItems(prev => [...prev, newLineItem()])
-  }
-
-  function toggleAddOn(key: string) {
-    patchInput({
-      addOns: input.addOns.includes(key)
-        ? input.addOns.filter(k => k !== key)
-        : [...input.addOns, key],
-    })
-  }
-
-  const scopeSummary = useMemo(() => {
-    const tier = TIERS.find(t => t.key === input.tier)
-    const parts = [
-      `${input.units} ${input.units === 1 ? 'وحدة' : 'وحدة'}`,
-      input.units > 1 ? (input.similar ? 'وحدات متشابهة' : 'وحدات مختلفة') : '',
-      tier?.label,
-      `${input.photosPerUnit} صورة للوحدة`,
-    ]
-    return parts.filter(Boolean).join(' — ')
-  }, [input])
+  const scopeSummary = packageItem ? `باقة ${packageItem.name}` : ''
 
   const printData: PrintData = {
     quoteNumber: record?.quote_number ?? 'مسودة',
@@ -203,7 +152,7 @@ export default function QuotationEditor({
       project_location: projectLocation.trim() || null,
       valid_until: validUntil || null,
       notes: notes.trim() || null,
-      config: input,
+      package_id: packageItem?.refId ?? null,
       items,
       terms,
       discount_pct: discountPct,
@@ -218,7 +167,8 @@ export default function QuotationEditor({
     const { data, error } = record
       ? await supabase.from('quotations').update(payload).eq('id', record.id).select().single()
       : await supabase.from('quotations')
-          .insert({ ...payload, quote_number: await nextQuoteNumber() })
+          // config كان مدخلات الحاسبة القديمة — يبقى كائناً فارغاً للصفوف الجديدة
+          .insert({ ...payload, config: {}, quote_number: await nextQuoteNumber() })
           .select().single()
 
     setSaving(false)
@@ -233,13 +183,14 @@ export default function QuotationEditor({
 
   function shareWhatsApp() {
     const phone = clientPhone.replace(/\D/g, '')
+    const base = servicesBase(items)
     const lines = [
       `*عرض سعر — ${business.name || 'Enphost'}*`,
       record?.quote_number ? `رقم العرض: ${record.quote_number}` : '',
       projectName ? `المشروع: ${projectName}` : '',
       scopeSummary,
       '',
-      ...items.map(i => `• ${i.label} — ${formatSAR(i.qty * i.unitPrice)} ريال`),
+      ...items.map(i => `• ${i.name} — ${formatSAR(lineAmount(i, base))} ريال`),
       '',
       `المجموع: ${formatSAR(totals.subtotal)} ريال`,
       discountPct > 0 ? `خصم ${discountPct}%: -${formatSAR(totals.discountAmount)} ريال` : '',
@@ -270,18 +221,13 @@ export default function QuotationEditor({
             <h1 className="text-2xl font-bold text-white">
               {isNew ? 'عرض سعر جديد' : `تعديل ${record!.quote_number}`}
             </h1>
-            <p className="text-gray-400 mt-0.5 text-sm">{scopeSummary}</p>
+            <p className="text-gray-400 mt-0.5 text-sm">
+              {scopeSummary || 'اختر الباقة والإضافات — تُضاف الخدمات تلقائياً'}
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowPricingSettings(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 transition-all"
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-            إعدادات التسعير
-          </button>
           <button
             onClick={() => window.print()}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 transition-all"
@@ -345,7 +291,7 @@ export default function QuotationEditor({
               </Field>
               <Field label="اسم المشروع">
                 <input value={projectName} onChange={e => setProjectName(e.target.value)}
-                  placeholder="مشروع 15 شقة — حي الياسمين" className={inputClass} />
+                  placeholder="فيلا — حي الياسمين" className={inputClass} />
               </Field>
               <Field label="الموقع">
                 <input value={projectLocation} onChange={e => setProjectLocation(e.target.value)}
@@ -360,212 +306,22 @@ export default function QuotationEditor({
                 </select>
               </Field>
               <Field label="صالح حتى">
-                <input type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)}
-                  className={inputClass} />
+                <DateField value={validUntil} onChange={setValidUntil} />
               </Field>
             </div>
           </section>
 
-          {/* Calculator */}
+          {/* Services */}
           <section className="bg-[#1a1a24] rounded-2xl border border-white/5 p-6">
             <div className="flex items-center gap-2 mb-1">
-              <Calculator className="w-5 h-5 text-[#d4af37]" />
-              <h2 className="text-white font-bold">حاسبة التسعير</h2>
+              <PackageIcon className="w-5 h-5 text-[#d4af37]" />
+              <h2 className="text-white font-bold">الباقة والخدمات</h2>
             </div>
             <p className="text-gray-500 text-xs mb-5">
-              المشروع لا يُسعّر بضرب سعر الوحدة في العدد — الانتقال والتجهيز يتكرر مرة واحدة،
-              والوحدات المتشابهة يكفيها تصوير نماذج
+              الأسعار والمواصفات تُملأ من الباقات والإضافات — عدّل أي بند لهذا العرض فقط
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-              <Field label="عدد الوحدات">
-                <input type="number" min={1} value={input.units}
-                  onChange={e => patchInput({ units: Math.max(1, Number(e.target.value)) })}
-                  className={inputClass} />
-              </Field>
-              <Field label="عدد الصور لكل وحدة">
-                <input type="number" min={1} value={input.photosPerUnit}
-                  onChange={e => patchInput({ photosPerUnit: Math.max(1, Number(e.target.value)) })}
-                  className={inputClass} />
-              </Field>
-            </div>
-
-            {/* Tier */}
-            <p className="text-gray-300 text-sm mb-2">مستوى التسليم</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-              {TIERS.map(t => (
-                <button
-                  key={t.key}
-                  onClick={() => patchInput({ tier: t.key, photosPerUnit: t.defaultPhotos })}
-                  className={`text-right p-4 rounded-xl border transition-all ${
-                    input.tier === t.key
-                      ? 'bg-[#d4af37]/10 border-[#d4af37]/40'
-                      : 'bg-[#0f0f16] border-white/10 hover:border-white/20'
-                  }`}
-                >
-                  <p className={`font-bold text-sm ${input.tier === t.key ? 'text-[#d4af37]' : 'text-white'}`}>
-                    {t.label}
-                  </p>
-                  <p className="text-gray-500 text-xs mt-1 leading-relaxed">{t.deliverable}</p>
-                  <p className="text-gray-600 text-xs mt-2">
-                    {formatSAR(config.tierRates[t.key])} ريال / وحدة (أساسي)
-                  </p>
-                </button>
-              ))}
-            </div>
-
-            {/* Similarity */}
-            {input.units > 1 && (
-              <div className="grid grid-cols-2 gap-3 mb-5">
-                {[
-                  { similar: true, label: 'الوحدات متشابهة', hint: 'تصوير نماذج + المرافق والواجهات' },
-                  { similar: false, label: 'الوحدات مختلفة', hint: 'تصوير كل وحدة على حدة' },
-                ].map(opt => (
-                  <button
-                    key={String(opt.similar)}
-                    onClick={() => patchInput({ similar: opt.similar })}
-                    className={`text-right p-4 rounded-xl border transition-all ${
-                      input.similar === opt.similar
-                        ? 'bg-[#d4af37]/10 border-[#d4af37]/40'
-                        : 'bg-[#0f0f16] border-white/10 hover:border-white/20'
-                    }`}
-                  >
-                    <p className={`font-bold text-sm ${input.similar === opt.similar ? 'text-[#d4af37]' : 'text-white'}`}>
-                      {opt.label}
-                    </p>
-                    <p className="text-gray-500 text-xs mt-1">{opt.hint}</p>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Add-ons */}
-            <p className="text-gray-300 text-sm mb-2">إضافات</p>
-            <div className="flex flex-wrap gap-2 mb-5">
-              {config.addOns.map(a => {
-                const on = input.addOns.includes(a.key)
-                return (
-                  <button
-                    key={a.key}
-                    onClick={() => toggleAddOn(a.key)}
-                    className={`px-4 py-2 rounded-xl text-sm border transition-all ${
-                      on
-                        ? 'bg-[#d4af37]/10 border-[#d4af37]/40 text-[#d4af37]'
-                        : 'bg-[#0f0f16] border-white/10 text-gray-400 hover:text-white hover:border-white/20'
-                    }`}
-                  >
-                    {a.label}
-                    <span className="text-xs opacity-60 mr-2">
-                      {a.type === 'percent' ? `+${a.amount}%` : `+${formatSAR(a.amount)}`}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Days */}
-            <Field
-              label="أيام التصوير"
-              hint={`محسوبة تلقائياً: ${Math.max(1, Math.ceil(est.billableUnits / (config.unitsPerDay[input.tier] || 8)))} يوم — اتركه فارغاً للحساب التلقائي`}
-            >
-              <input
-                type="number" min={1}
-                value={input.daysOverride ?? ''}
-                placeholder={String(est.days)}
-                onChange={e => patchInput({
-                  daysOverride: e.target.value === '' ? null : Math.max(1, Number(e.target.value)),
-                })}
-                className={inputClass}
-              />
-            </Field>
-          </section>
-
-          {/* Line items */}
-          <section className="bg-[#1a1a24] rounded-2xl border border-white/5 p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <div>
-                <h2 className="text-white font-bold">بنود العرض</h2>
-                <p className="text-gray-500 text-xs mt-0.5">
-                  {autoItems
-                    ? 'تُولَّد تلقائياً من الحاسبة — أي تعديل يدوي يوقف التوليد'
-                    : 'بنود معدّلة يدوياً'}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {!autoItems && (
-                  <button
-                    onClick={() => setAutoItems(true)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-[#d4af37] bg-[#d4af37]/10 hover:bg-[#d4af37]/20 transition-all"
-                  >
-                    <Wand2 className="w-4 h-4" />
-                    إعادة التوليد من الحاسبة
-                  </button>
-                )}
-                <button
-                  onClick={addItem}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 transition-all"
-                >
-                  <Plus className="w-4 h-4" />
-                  بند
-                </button>
-              </div>
-            </div>
-
-            {items.length === 0 ? (
-              <p className="text-gray-600 text-sm text-center py-10">لا توجد بنود بعد</p>
-            ) : (
-              <div className="space-y-3">
-                {items.map(item => (
-                  <div key={item.id} className="bg-[#0f0f16] rounded-xl border border-white/5 p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 space-y-2">
-                        <input
-                          value={item.label}
-                          onChange={e => editItem(item.id, { label: e.target.value })}
-                          placeholder="اسم البند"
-                          className="w-full bg-transparent text-white font-bold text-sm focus:outline-none placeholder-gray-600"
-                        />
-                        <input
-                          value={item.description}
-                          onChange={e => editItem(item.id, { description: e.target.value })}
-                          placeholder="وصف مختصر يظهر للعميل"
-                          className="w-full bg-transparent text-gray-500 text-xs focus:outline-none placeholder-gray-700"
-                        />
-                      </div>
-                      <button
-                        onClick={() => removeItem(item.id)}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-all flex-shrink-0"
-                        title="حذف البند"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-                      <label className="flex items-center gap-2">
-                        <span className="text-gray-500 text-xs">الكمية</span>
-                        <input
-                          type="number" min={0} value={item.qty}
-                          onChange={e => editItem(item.id, { qty: Number(e.target.value) })}
-                          className="w-20 bg-[#1a1a24] border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-[#d4af37]/40"
-                        />
-                      </label>
-                      <label className="flex items-center gap-2">
-                        <span className="text-gray-500 text-xs">سعر الوحدة</span>
-                        <input
-                          type="number" min={0} value={item.unitPrice}
-                          onChange={e => editItem(item.id, { unitPrice: Number(e.target.value) })}
-                          className="w-28 bg-[#1a1a24] border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-[#d4af37]/40"
-                        />
-                      </label>
-                      <span className="mr-auto text-[#d4af37] font-bold text-sm">
-                        {formatSAR(item.qty * item.unitPrice)} ريال
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <ServicesEditor items={items} onChange={setItems} />
 
             {/* Discount / VAT */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-white/5">
@@ -636,47 +392,6 @@ export default function QuotationEditor({
         {/* ── Right: live summary ─────────────────────────────────────────── */}
         <div className="space-y-6">
           <div className="xl:sticky xl:top-6 space-y-6">
-
-            {/* Suggested range */}
-            <section className="bg-gradient-to-br from-[#d4af37]/12 to-transparent rounded-2xl border border-[#d4af37]/20 p-6">
-              <p className="text-[#d4af37] text-sm font-bold mb-1">السعر المقترح للمشروع</p>
-              <p className="text-white text-2xl font-black leading-tight">
-                {formatSAR(est.rangeLow)} – {formatSAR(est.rangeHigh)}
-                <span className="text-sm font-normal text-gray-400 mr-2">ريال</span>
-              </p>
-
-              <div className="mt-4 space-y-2 text-xs">
-                <div className="flex justify-between text-gray-400">
-                  <span>وحدات تُصوَّر فعلياً</span>
-                  <span className="text-gray-200">{est.billableUnits} من {input.units}</span>
-                </div>
-                <div className="flex justify-between text-gray-400">
-                  <span>سعر الوحدة بعد معامل الحجم</span>
-                  <span className="text-gray-200">{formatSAR(est.unitPrice)} ريال (×{est.volumeFactor})</span>
-                </div>
-                <div className="flex justify-between text-gray-400">
-                  <span>أيام التصوير</span>
-                  <span className="text-gray-200">{est.days}</span>
-                </div>
-                <div className="flex justify-between text-gray-400">
-                  <span>التكلفة الفعلية لكل وحدة</span>
-                  <span className="text-gray-200">{formatSAR(est.effectiveUnitRate)} ريال</span>
-                </div>
-              </div>
-
-              {est.underCommercialRate && (
-                <div className="mt-4 flex gap-2 bg-amber-500/10 border border-amber-500/25 rounded-xl p-3">
-                  <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-amber-300/90 text-xs leading-relaxed">
-                    السعر الفعلي للوحدة أقل من {formatSAR(config.minCommercialUnitRate)} ريال.
-                    لا يُنصح بالنزول لهذا المستوى إلا لتوثيق سريع بأربع صور دون معالجة متقدمة،
-                    وبحد أدنى تعاقدي كبير.
-                  </p>
-                </div>
-              )}
-            </section>
-
-            {/* Totals */}
             <section className="bg-[#1a1a24] rounded-2xl border border-white/5 p-6">
               <h2 className="text-white font-bold mb-4">الإجمالي</h2>
               <div className="space-y-2.5 text-sm">
@@ -703,13 +418,6 @@ export default function QuotationEditor({
                   </span>
                 </div>
               </div>
-
-              {Math.abs(totals.subtotal - est.base) > 1 && (
-                <p className="text-gray-600 text-xs mt-4 leading-relaxed">
-                  المجموع الحالي يختلف عن السعر الأساسي المقترح ({formatSAR(est.base)} ريال)
-                  لأن البنود عُدّلت يدوياً.
-                </p>
-              )}
             </section>
           </div>
         </div>
@@ -717,14 +425,6 @@ export default function QuotationEditor({
 
       {/* Printable version */}
       <QuotationPrint data={printData} />
-
-      {showPricingSettings && (
-        <QuotationPricingSettings
-          config={config}
-          onClose={() => setShowPricingSettings(false)}
-          onSaved={next => { onConfigChange(next); setVatPct(next.vatPct) }}
-        />
-      )}
     </div>
   )
 }

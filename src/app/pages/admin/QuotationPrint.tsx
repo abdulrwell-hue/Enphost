@@ -1,4 +1,6 @@
-import { formatSAR, type LineItem, type Totals } from '../../../lib/pricing'
+import {
+  formatSAR, lineAmount, servicesBase, type ServiceItem, type Totals,
+} from '../../../lib/catalog'
 
 export interface PrintData {
   quoteNumber: string
@@ -10,7 +12,7 @@ export interface PrintData {
   projectName: string
   projectLocation: string
   scopeSummary: string
-  items: LineItem[]
+  items: ServiceItem[]
   totals: Totals
   vatEnabled: boolean
   vatPct: number
@@ -30,6 +32,7 @@ export default function QuotationPrint({ data }: { data: PrintData }) {
     projectName, projectLocation, scopeSummary, items, totals, vatEnabled,
     vatPct, discountPct, notes, terms, business,
   } = data
+  const base = servicesBase(items)
 
   return (
     <div
@@ -85,17 +88,24 @@ export default function QuotationPrint({ data }: { data: PrintData }) {
           {items.map(item => (
             <tr key={item.id} style={{ breakInside: 'avoid' }}>
               <td className="py-2.5 px-3 border border-[#e6ddc4] align-top">
-                <p className="font-bold">{item.label || '—'}</p>
-                {item.description && (
-                  <p className="text-xs text-[#666] mt-0.5 leading-relaxed">{item.description}</p>
+                <p className="font-bold">{item.name || '—'}</p>
+                {item.spec && (
+                  <p className="text-xs text-[#666] mt-0.5 leading-relaxed">{item.spec}</p>
+                )}
+                {item.delivery && (
+                  <p className="text-[10px] text-[#999] mt-0.5">مدة التسليم: {item.delivery}</p>
                 )}
               </td>
-              <td className="py-2.5 px-3 border border-[#e6ddc4] text-center align-top">{item.qty}</td>
               <td className="py-2.5 px-3 border border-[#e6ddc4] text-center align-top">
-                {formatSAR(item.unitPrice)}
+                {item.pricing === 'percent'
+                  ? '—'
+                  : `${item.qty}${item.unitLabel ? ` ${item.unitLabel}` : ''}`}
+              </td>
+              <td className="py-2.5 px-3 border border-[#e6ddc4] text-center align-top">
+                {item.pricing === 'percent' ? `${item.price}%` : formatSAR(item.price)}
               </td>
               <td className="py-2.5 px-3 border border-[#e6ddc4] text-center align-top font-bold">
-                {formatSAR(item.qty * item.unitPrice)}
+                {formatSAR(lineAmount(item, base))}
               </td>
             </tr>
           ))}
